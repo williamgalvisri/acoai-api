@@ -2,6 +2,7 @@ const OpenAI = require('openai');
 const ClientPersona = require('../models/ClientPersona');
 const ChatHistory = require('../models/ChatHistory');
 const Appointment = require('../models/Appointment');
+const Contact = require('../models/Contact');
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -16,7 +17,13 @@ const openai = new OpenAI({
  */
 async function generateResponse(phoneNumber, messageText, ownerId) {
     try {
-        // 1. Fetch Client Persona
+        // 1. Identify/Create Contact
+        let contact = await Contact.findOne({ phoneNumber });
+        if (!contact) {
+            contact = await Contact.create({ phoneNumber });
+        }
+
+        // 2. Fetch Client Persona
         // Assuming ownerId is passed or determined upstream
         const persona = await ClientPersona.findOne({ ownerId });
 
@@ -24,7 +31,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
             console.warn(`Persona not found for ownerId: ${ownerId}. Using fallback.`);
         }
 
-        // 2. Fetch Chat History
+        // 3. Fetch Context (Optimized)
         const history = await ChatHistory.find({ phoneNumber })
             .sort({ timestamp: -1 })
             .limit(10);
@@ -35,7 +42,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
             content: msg.content,
         }));
 
-        // 3. Construct System Prompt
+        // 4. Construct System Prompt
         let systemPrompt = "You are a helpful assistant.";
         if (persona) {
             const examples = persona.responseExamples.map(ex => `User: ${ex.userMessage}\nYou: ${ex.idealResponse}`).join('\n');
@@ -45,6 +52,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
 
             systemPrompt = `You are ${persona.botName}. 
       Your tone is ${persona.toneDescription}. 
+      You are talking to ${contact.name}.
       Use these keywords naturally: ${persona.keywords.join(', ')}.
       Fillers to use occasionally: ${persona.fillers.join(', ')}.
       
@@ -57,10 +65,12 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
       ${examples}
       
       Goal: Automate appointment scheduling while mimicking the detailed persona above.
-      If the user wants to book, check availability first.`;
+      If the user wants to book, check availability first.
+      If the user tells you their name, remember it using the updateContactName tool.
+      If the user's name is 'Cliente', politely ask them to remind you who they are because you changed your number, so you can update your contacts.`;
         }
 
-        // 4. Define Tools
+        // 5. Define Tools
         const tools = [
             {
                 type: "function",
@@ -100,6 +110,23 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
                     },
                 },
             },
+            {
+                type: "function",
+                function: {
+                    name: "updateContactName",
+                    description: "Update the user's name if they provide it during the conversation.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            name: {
+                                type: "string",
+                                description: "The name the user provided.",
+                            },
+                        },
+                        required: ["name"],
+                    },
+                },
+            },
         ];
 
         // 5. Call OpenAI
@@ -128,6 +155,10 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
                 bookAppointment: async (args) => {
                     return await bookAppointment(args.dateTime, phoneNumber, args.notes);
                 },
+                updateContactName: async (args) => {
+                    await Contact.updateOne({ phoneNumber }, { name: args.name });
+                    return JSON.stringify({ success: true, message: `Contact name updated to ${args.name}` });
+                }
             };
 
             messages.push(responseMessage); // Extend conversation with assistant's reply
@@ -172,8 +203,14 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
  */
 async function bookAppointment(dateTime, customerPhone, notes) {
     try {
+        const contact = await Contact.findOne({ phoneNumber: customerPhone });
+        if (!contact) {
+            throw new Error("Contact not found for booking");
+        }
+
         // In a real app, check availability here.
         const newAppointment = new Appointment({
+            contactId: contact._id,
             customerPhone,
             dateTime: new Date(dateTime),
             notes,

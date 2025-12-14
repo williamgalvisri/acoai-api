@@ -1,6 +1,8 @@
 const axios = require('axios');
 const openaiService = require('../services/openaiService');
 const ChatHistory = require('../models/ChatHistory');
+const Contact = require('../models/Contact');
+const sseManager = require('../utils/sseManager');
 
 // Verify Webhook
 exports.verifyWebhook = (req, res) => {
@@ -39,39 +41,68 @@ exports.handleMessage = async (req, res) => {
                 // Only handle text messages for now
                 if (msgBody) {
 
-                    // Save User Message
-                    await ChatHistory.create({
+                    // 1. Identify/Create Contact
+                    let contact = await Contact.findOne({ phoneNumber: from });
+                    if (!contact) {
+                        contact = await Contact.create({ phoneNumber: from });
+                    }
+
+                    // 2. Save User Message
+                    const userMsg = await ChatHistory.create({
                         phoneNumber: from,
                         role: 'user',
                         content: msgBody
                     });
 
-                    // Generate AI Response
-                    // TODO: Dynamic ownerId based on phoneNumberId or config
-                    const ownerId = "user_123_costa";
-                    const aiResponse = await openaiService.generateResponse(from, msgBody, ownerId);
-
-                    // Save Assistant Response
-                    await ChatHistory.create({
+                    // 3. Emit SSE Event (User Message)
+                    sseManager.sendEvent('NEW_MESSAGE', {
+                        contactId: contact._id,
                         phoneNumber: from,
-                        role: 'assistant',
-                        content: aiResponse
+                        role: 'user',
+                        content: msgBody,
+                        timestamp: userMsg.timestamp,
                     });
 
-                    // Send Response to WhatsApp
-                    await axios({
-                        method: 'POST',
-                        url: `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
-                        headers: {
-                            'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
-                            'Content-Type': 'application/json',
-                        },
-                        data: {
-                            messaging_product: 'whatsapp',
-                            to: from,
-                            text: { body: aiResponse },
-                        },
-                    });
+                    // 4. Check Bot Active Status
+                    if (contact.isBotActive) {
+                        // Generate AI Response
+                        // TODO: Dynamic ownerId based on phoneNumberId or config
+                        const ownerId = "user_123_costa";
+                        const aiResponse = await openaiService.generateResponse(from, msgBody, ownerId);
+
+                        // Save Assistant Response
+                        const aiMsg = await ChatHistory.create({
+                            phoneNumber: from,
+                            role: 'assistant',
+                            content: aiResponse
+                        });
+
+                        // Emit SSE Event (Assistant Message)
+                        sseManager.sendEvent('NEW_MESSAGE', {
+                            contactId: contact._id,
+                            phoneNumber: from,
+                            role: 'assistant',
+                            content: aiResponse,
+                            timestamp: aiMsg.timestamp,
+                        });
+
+                        // Send Response to WhatsApp
+                        await axios({
+                            method: 'POST',
+                            url: `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+                            headers: {
+                                'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+                                'Content-Type': 'application/json',
+                            },
+                            data: {
+                                messaging_product: 'whatsapp',
+                                to: from,
+                                text: { body: aiResponse },
+                            },
+                        });
+                    } else {
+                        console.log(`Bot disabled for ${from}. Skipping AI response.`);
+                    }
                 }
             }
             return res.success(null, 'EVENT_RECEIVED');
