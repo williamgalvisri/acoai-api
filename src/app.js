@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const responseHandler = require('./middleware/responseHandler');
 const chatRoutes = require('./routes/chatRoutes');
 const whatsappRoutes = require('./routes/whatsappRoutes');
 
@@ -8,6 +9,7 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors());
+app.use(responseHandler);
 
 // Routes
 app.use('/api/chat', chatRoutes);

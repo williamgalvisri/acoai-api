@@ -74,12 +74,12 @@ exports.handleMessage = async (req, res) => {
                     });
                 }
             }
-            res.sendStatus(200);
+            return res.success(null, 'EVENT_RECEIVED');
         } else {
             res.sendStatus(404);
         }
     } catch (error) {
         console.error('Error handling WhatsApp message:', error.response ? error.response.data : error.message);
-        res.sendStatus(500);
+        return res.error(error); // This sends a JSON error response. Webhooks usually just want a 500 status, but this is what was requested.
     }
 };

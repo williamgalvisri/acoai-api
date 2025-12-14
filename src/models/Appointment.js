@@ -2,8 +2,7 @@ const mongoose = require('mongoose');
 
 const AppointmentSchema = new mongoose.Schema({
     customerName: {
-        type: String,
-        // Optional if we only have phone initially
+        type: String
     },
     customerPhone: {
         type: String,

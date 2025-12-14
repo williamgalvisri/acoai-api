@@ -1,18 +1,19 @@
 const openaiService = require('../services/openaiService');
+const { BadRequestError } = require('../utils/ApiResponse');
 
 exports.handleChat = async (req, res) => {
     try {
         const { message, userPhone } = req.body;
 
         if (!message || !userPhone) {
-            return res.status(400).json({ error: 'Message and userPhone are required.' });
+            return res.error(new BadRequestError('Message and userPhone are required.'));
         }
 
         const aiResponse = await openaiService.generateResponse(message, userPhone);
 
-        res.json({ response: aiResponse });
+        return res.success({ response: aiResponse });
     } catch (error) {
         console.error('Chat processing error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        return res.error(error);
     }
 };

@@ -110,7 +110,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
         ];
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-4o-mini",
             messages: messages,
             tools: tools,
             tool_choice: "auto",
@@ -122,7 +122,6 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
         if (responseMessage.tool_calls) {
             const availableFunctions = {
                 checkAvailability: async (args) => {
-                    // Dummy implementation as requested
                     const availability = await checkAvailability(args.dateTime);
                     return availability;
                 },
@@ -151,7 +150,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
 
             // Get final response from model after tool execution
             const secondResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
+                model: "gpt-4o-mini",
                 messages: messages,
             });
 
