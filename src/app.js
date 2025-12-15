@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
-const responseHandler = require('./middleware/responseHandler');
+const responseHandler = require('./middlewares/responseHandler');
 const chatRoutes = require('./routes/chatRoutes');
 const whatsappRoutes = require('./routes/whatsappRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const sseRoutes = require('./routes/sseRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(responseHandler);
 app.use('/api/chat', chatRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api', sseRoutes);
 
 // Health Check

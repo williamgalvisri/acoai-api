@@ -5,6 +5,11 @@ const ClientPersonaSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    photoUrl: { type: String, default: '' },
+    phoneNumber: { type: String, required: true, unique: true },
+    passwordHash: { type: String, select: false },
     botName: {
         type: String,
         default: 'Assistant',
