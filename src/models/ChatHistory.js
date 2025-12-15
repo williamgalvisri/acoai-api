@@ -8,7 +8,7 @@ const ChatHistorySchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['user', 'assistant'],
+        enum: ['user', 'assistant', 'owner'],
         required: true,
     },
     content: {
@@ -19,6 +19,11 @@ const ChatHistorySchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     },
+    tokens: {
+        prompt: { type: Number, default: 0 },      // Tokens used for this specific message input
+        completion: { type: Number, default: 0 },  // Tokens generated for this specific response
+        total: { type: Number, default: 0 }        // Total for this single interaction
+    }
 });
 
 module.exports = mongoose.model('ChatHistory', ChatHistorySchema);

@@ -13,7 +13,7 @@ const openai = new OpenAI({
  * @param {string} phoneNumber - The user's phone number.
  * @param {string} messageText - The message from the user.
  * @param {string} ownerId - The ID of the business owner to fetch the persona.
- * @returns {Promise<string>} - The AI's response.
+ * @returns {Promise<{text: string, usage: object}>} - The AI's response and token usage.
  */
 async function generateResponse(phoneNumber, messageText, ownerId) {
     try {
@@ -38,7 +38,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
 
         // Reverse to chronological order for the LLM
         const conversationHistory = history.reverse().map(msg => ({
-            role: msg.role,
+            role: msg.role === 'owner' ? 'assistant' : msg.role,
             content: msg.content,
         }));
 
@@ -52,7 +52,16 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
 
             systemPrompt = `You are ${persona.botName}. 
       Your tone is ${persona.toneDescription}. 
-      You are talking to ${contact.name}.
+      
+      IMPORTANT: The user's current name in your database is "${contact.name}".
+      ${(contact.name === 'Cliente' || contact.name === 'Unknown')
+                    ? `CRITICAL INSTRUCTION: YOU DO NOT KNOW THIS USER'S NAME YET. 
+             Your HIGHEST PRIORITY is to politely ask for their name so you can save it. 
+             Claim you lost your contacts or changed your phone. 
+             DO NOT provide full assistance until you get their name. 
+             Once they give it, call the 'updateContactName' tool IMMEDIATELY.`
+                    : `You are talking to ${contact.name}.`}
+
       Use these keywords naturally: ${persona.keywords.join(', ')}.
       Fillers to use occasionally: ${persona.fillers.join(', ')}.
       
@@ -60,14 +69,19 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
       Services: ${services}
       Pricing: ${pricing}
       Location: ${location}
+      Current Date: ${new Date().toLocaleString()}
 
       Here are examples of how you speak (Few-Shot Learning):
       ${examples}
       
       Goal: Automate appointment scheduling while mimicking the detailed persona above.
-      If the user wants to book, check availability first.
-      If the user tells you their name, remember it using the updateContactName tool.
-      If the user's name is 'Cliente', politely ask them to remind you who they are because you changed your number, so you can update your contacts.`;
+      
+      CRITICAL RULES:
+      1. You MUST use the 'checkAvailability' tool BEFORE confirming, promising, or booking ANY appointment time. 
+      2. Do NOT trust your memory or previous messages for availability. The database is the only source of truth.
+      3. If the user requests a time, check it first using 'checkAvailability'.
+      4. WHEN the user confirms the date and time, EXECUTE the 'bookAppointment' tool IMMEDIATELY. This is the only way to finalize the booking.
+      5. If the user tells you their name, remember it using the 'updateContactName' tool.`;
         }
 
         // 5. Define Tools
@@ -129,66 +143,95 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
             },
         ];
 
-        // 5. Call OpenAI
-        const messages = [
+        // 5. Call OpenAI (Loop for sequential tool calls)
+        let messages = [
             { role: "system", content: systemPrompt },
             ...conversationHistory,
             { role: "user", content: messageText },
         ];
 
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: messages,
-            tools: tools,
-            tool_choice: "auto",
-        });
+        let totalUsage = {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        };
 
-        const responseMessage = response.choices[0].message;
+        let finalResponseText = "";
+        let keepLooping = true;
+        let loopCount = 0;
+        const MAX_LOOPS = 5; // Safety break
 
-        // 6. Handle Tool Calls
-        if (responseMessage.tool_calls) {
-            const availableFunctions = {
-                checkAvailability: async (args) => {
-                    const availability = await checkAvailability(args.dateTime);
-                    return availability;
-                },
-                bookAppointment: async (args) => {
-                    return await bookAppointment(args.dateTime, phoneNumber, args.notes);
-                },
-                updateContactName: async (args) => {
-                    await Contact.updateOne({ phoneNumber }, { name: args.name });
-                    return JSON.stringify({ success: true, message: `Contact name updated to ${args.name}` });
-                }
-            };
+        while (keepLooping && loopCount < MAX_LOOPS) {
+            loopCount++;
 
-            messages.push(responseMessage); // Extend conversation with assistant's reply
-
-            for (const toolCall of responseMessage.tool_calls) {
-                const functionName = toolCall.function.name;
-                const functionToCall = availableFunctions[functionName];
-                const functionArgs = JSON.parse(toolCall.function.arguments);
-
-                // Execute the function
-                const functionResponse = await functionToCall(functionArgs);
-
-                messages.push({
-                    tool_call_id: toolCall.id,
-                    role: "tool",
-                    name: functionName,
-                    content: functionResponse,
-                });
-            }
-
-            // Get final response from model after tool execution
-            const secondResponse = await openai.chat.completions.create({
+            const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: messages,
+                tools: tools,
+                tool_choice: "auto",
             });
 
-            return secondResponse.choices[0].message.content;
+            // Accumulate usage
+            if (response.usage) {
+                totalUsage.prompt_tokens += response.usage.prompt_tokens;
+                totalUsage.completion_tokens += response.usage.completion_tokens;
+                totalUsage.total_tokens += response.usage.total_tokens;
+            }
+
+            const responseMessage = response.choices[0].message;
+
+            // If text content exists, update final response (it might be the final answer or a thought before a tool)
+            if (responseMessage.content) {
+                finalResponseText = responseMessage.content;
+            }
+
+            // Check if tool calls present
+            if (responseMessage.tool_calls) {
+                messages.push(responseMessage); // Add assistant's tool-call request to history
+
+                const availableFunctions = {
+                    checkAvailability: async (args) => {
+                        console.log('running checkAvailability tool');
+                        const availability = await checkAvailability(args.dateTime);
+                        return availability;
+                    },
+                    bookAppointment: async (args) => {
+                        console.log('running bookAppointment tool');
+                        return await bookAppointment(args.dateTime, phoneNumber, args.notes);
+                    },
+                    updateContactName: async (args) => {
+                        console.log('running updateContactName tool');
+                        await Contact.updateOne({ phoneNumber }, { name: args.name });
+                        return JSON.stringify({ success: true, message: `Contact name updated to ${args.name}` });
+                    }
+                };
+
+                for (const toolCall of responseMessage.tool_calls) {
+                    const functionName = toolCall.function.name;
+                    const functionToCall = availableFunctions[functionName];
+                    const functionArgs = JSON.parse(toolCall.function.arguments);
+
+                    // Execute the function
+                    const functionResponse = await functionToCall(functionArgs);
+
+                    messages.push({
+                        tool_call_id: toolCall.id,
+                        role: "tool",
+                        name: functionName,
+                        content: functionResponse,
+                    });
+                }
+                // Loop continues to let OpenAI digest the tool results
+            } else {
+                // No more tool calls, we are done
+                keepLooping = false;
+            }
         }
 
-        return responseMessage.content;
+        return {
+            text: finalResponseText,
+            usage: totalUsage
+        };
 
     } catch (error) {
         console.error("Error in generateResponse:", error);
@@ -204,6 +247,7 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
 async function bookAppointment(dateTime, customerPhone, notes) {
     try {
         const contact = await Contact.findOne({ phoneNumber: customerPhone });
+        console.log('booked');
         if (!contact) {
             throw new Error("Contact not found for booking");
         }
@@ -227,6 +271,7 @@ async function bookAppointment(dateTime, customerPhone, notes) {
 
 async function checkAvailability(dateTime) {
     try {
+        console.log('checking availability');
         const appointment = await Appointment.findOne({
             dateTime: new Date(dateTime),
         });

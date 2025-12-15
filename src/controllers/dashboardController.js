@@ -63,3 +63,24 @@ exports.toggleBot = async (req, res) => {
         return res.error(error);
     }
 };
+
+// GET /api/contacts/:id/messages
+exports.getMessages = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const ContactModel = require('../models/Contact');
+        const ChatHistory = require('../models/ChatHistory');
+
+        const contact = await ContactModel.findById(id);
+        if (!contact) {
+            throw new NotFoundError('Contact not found');
+        }
+
+        const messages = await ChatHistory.find({ phoneNumber: contact.phoneNumber })
+            .sort({ timestamp: 1 }); // Oldest first
+
+        return res.success(messages);
+    } catch (error) {
+        return res.error(error);
+    }
+};

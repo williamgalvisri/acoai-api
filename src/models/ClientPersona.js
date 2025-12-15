@@ -32,6 +32,17 @@ const ClientPersonaSchema = new mongoose.Schema({
         pricing: mongoose.Schema.Types.Mixed,
         location: String,
     },
+    usage: {
+        promptTokens: { type: Number, default: 0 },      // Monthly Input Sum
+        completionTokens: { type: Number, default: 0 },  // Monthly Output Sum
+        totalTokens: { type: Number, default: 0 },       // Monthly Total Sum
+        lastResetDate: { type: Date, default: Date.now } // To track billing cycle
+    },
+    subscription: {
+        plan: { type: String, enum: ['basic', 'pro'], default: 'basic' },
+        tokenLimit: { type: Number, default: 100000 },   // Monthly limit
+        isActive: { type: Boolean, default: true }
+    },
     createdAt: {
         type: Date,
         default: Date.now,
