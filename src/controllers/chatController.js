@@ -44,6 +44,12 @@ exports.handleChat = async (req, res) => {
             timestamp: new Date()
         });
 
+        // Update last interaction for contact
+        await Contact.findOneAndUpdate(
+            { phoneNumber: userPhone },
+            { lastInteraction: new Date() }
+        );
+
         // 4. Emit SSE (so dashboard sees it too, avoiding refresh)
         if (contact) {
             sseManager.sendEvent('NEW_MESSAGE', {

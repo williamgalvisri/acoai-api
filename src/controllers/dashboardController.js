@@ -18,7 +18,17 @@ exports.getContacts = async (req, res) => {
 // GET /api/appointments
 exports.getAppointments = async (req, res) => {
     try {
-        const appointments = await Appointment.find()
+        const { start, end } = req.query;
+        let query = {};
+
+        if (start && end) {
+            query.dateTime = {
+                $gte: new Date(start),
+                $lte: new Date(end)
+            };
+        }
+
+        const appointments = await Appointment.find(query)
             .populate('contactId')
             .sort({ dateTime: 1 });
         return res.success(appointments);
@@ -71,16 +81,28 @@ exports.toggleBot = async (req, res) => {
 exports.getMessages = async (req, res) => {
     try {
         const { id } = req.params;
+        const { limit = 20, before } = req.query;
 
         const contact = await ContactModel.findById(id);
         if (!contact) {
             throw new NotFoundError('Contact not found');
         }
 
-        const messages = await ChatHistory.find({ phoneNumber: contact.phoneNumber })
-            .sort({ timestamp: 1 }); // Oldest first
+        let query = { phoneNumber: contact.phoneNumber };
 
-        return res.success(messages);
+        if (before) {
+            query.timestamp = { $lt: before };
+        }
+
+        // Get latest messages first (descending), then reverse them
+        const messages = await ChatHistory.find(query)
+            .sort({ timestamp: -1 }) // Newest first to get the "last X"
+            .limit(parseInt(limit));
+
+        // Reverse to return them in chronological order (oldest first) for the chat UI
+        const chronologicalMessages = messages.reverse();
+
+        return res.success(chronologicalMessages);
     } catch (error) {
         return res.error(error);
     }

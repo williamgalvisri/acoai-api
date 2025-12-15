@@ -42,10 +42,17 @@ exports.handleMessage = async (req, res) => {
                 // Only handle text messages for now
                 if (msgBody) {
 
-                    // 1. Identify/Create Contact
+                    // 1. Identify/Create Contact or Update
                     let contact = await Contact.findOne({ phoneNumber: from });
                     if (!contact) {
-                        contact = await Contact.create({ phoneNumber: from });
+                        contact = await Contact.create({ phoneNumber: from, lastInteraction: new Date() });
+                    } else {
+                        // Update existing contact's last interaction
+                        contact = await Contact.findByIdAndUpdate(
+                            contact._id,
+                            { lastInteraction: new Date() },
+                            { new: true }
+                        );
                     }
 
                     // 2. Save User Message

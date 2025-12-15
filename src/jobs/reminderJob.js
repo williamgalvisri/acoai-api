@@ -6,15 +6,17 @@ const axios = require('axios');
 
 const setupReminderJob = () => {
     // Run every 30 minutes
-    cron.schedule('*/30 * * * *', async () => {
+    cron.schedule('*/10 * * * *', async () => {
         console.log('Running reminder job...');
         try {
             const now = new Date();
             // Find confirmed appointments in the future that haven't had a reminder sent
             const appointments = await Appointment.find({
                 status: 'confirmed',
-                reminderSent: false,
-                dateTime: { $gt: now }
+                $or: [
+                    { reminderSent: false },
+                    { reminderSent: { $exists: false } }
+                ]
             }).populate('contactId'); // Need contact phone if customerPhone is not reliable
 
             for (const apt of appointments) {
