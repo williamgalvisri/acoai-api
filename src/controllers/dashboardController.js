@@ -114,9 +114,18 @@ exports.getSettings = async (req, res) => {
         // Single tenant assumption: Get the first persona
         const persona = await ClientPersona.findOne({});
         if (!persona) {
-            return res.success({ reminderSettings: { isEnabled: true, hoursBefore: 24 } }); // Default if no persona
+            // Return defaults if no persona exists
+            return res.success({
+                reminderSettings: { isEnabled: true, hoursBefore: 24 },
+                appointmentSettings: { defaultDuration: 30, bufferTime: 5, timezone: 'America/Bogota' },
+                businessContext: { services: [], hours: {} }
+            });
         }
-        return res.success({ reminderSettings: persona.reminderSettings });
+        return res.success({
+            reminderSettings: persona.reminderSettings,
+            appointmentSettings: persona.appointmentSettings,
+            businessContext: persona.businessContext
+        });
     } catch (error) {
         return res.error(error);
     }
@@ -125,18 +134,26 @@ exports.getSettings = async (req, res) => {
 // PUT /api/settings
 exports.updateSettings = async (req, res) => {
     try {
-        // req.body comes directly as { isEnabled: true, hoursBefore: 3 } from frontend
-        const { isEnabled, hoursBefore } = req.body;
-        const reminderSettings = { isEnabled, hoursBefore };
+        // req.body contains the full or partial settings objects
+        const { reminderSettings, appointmentSettings, businessContext } = req.body;
+
+        const updates = {};
+        if (reminderSettings) updates.reminderSettings = reminderSettings;
+        if (appointmentSettings) updates.appointmentSettings = appointmentSettings;
+        if (businessContext) updates.businessContext = businessContext;
 
         // Update the first persona found
         const persona = await ClientPersona.findOneAndUpdate(
             {},
-            { $set: { reminderSettings: reminderSettings } },
-            { new: true, upsert: true } // Create if doesn't exist (though it should)
+            { $set: updates },
+            { new: true, upsert: true } // Create if doesn't exist
         );
 
-        return res.success({ reminderSettings: persona.reminderSettings });
+        return res.success({
+            reminderSettings: persona.reminderSettings,
+            appointmentSettings: persona.appointmentSettings,
+            businessContext: persona.businessContext
+        });
     } catch (error) {
         return res.error(error);
     }

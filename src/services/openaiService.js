@@ -46,9 +46,28 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
         let systemPrompt = "You are a helpful assistant.";
         if (persona) {
             const examples = persona.responseExamples.map(ex => `User: ${ex.userMessage}\nYou: ${ex.idealResponse}`).join('\n');
-            const services = persona.businessContext?.services?.join(', ') || '';
-            const pricing = JSON.stringify(persona.businessContext?.pricing || {});
-            const location = persona.businessContext?.location || '';
+
+            // Format Services
+            const servicesList = persona.businessContext?.services?.map(s =>
+                `- ${s.name} ($${s.price || '?'})${s.duration ? `, ${s.duration} mins` : ''}${s.description ? `: ${s.description}` : ''}`
+            ).join('\n') || 'No specific services listed.';
+
+            // Format Hours
+            const hoursObj = persona.businessContext?.hours;
+            let hoursStr = "Hours not specified.";
+            if (hoursObj) {
+                // @ts-ignore
+                hoursStr = Object.entries(hoursObj).map(([day, val]) => {
+                    if (!val.isOpen) return `${day.charAt(0).toUpperCase() + day.slice(1)}: Closed`;
+                    return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${val.open} - ${val.close}`;
+                }).join('\n');
+            }
+
+            const location = persona.businessContext?.location || 'Not specified';
+            const contactPhone = persona.businessContext?.contactPhone || '';
+
+            const defaultDuration = persona.appointmentSettings?.defaultDuration || 30;
+            const bufferTime = persona.appointmentSettings?.bufferTime || 5;
 
             systemPrompt = `You are ${persona.botName}. 
       Your tone is ${persona.toneDescription}. 
@@ -66,11 +85,22 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
       Fillers to use occasionally: ${persona.fillers.join(', ')}.
       
       Business Context:
-      Services: ${services}
-      Pricing: ${pricing}
       Location: ${location}
-      Current Date: ${new Date().toLocaleString()}
-
+      Contact: ${contactPhone}
+      
+      Services & Pricing:
+      ${servicesList}
+      
+      Operating Hours:
+      ${hoursStr}
+      
+      Appointment Rules:
+      - Default Appointment Duration: ${defaultDuration} minutes.
+      - Buffer Time required between appointments: ${bufferTime} minutes.
+      - When checking availability or booking, ALWAYS consider the duration + buffer.
+      
+      Current Date: ${new Date().toLocaleString('en-US', { timeZone: persona.appointmentSettings?.timezone || 'America/Bogota' })}
+ 
       Here are examples of how you speak (Few-Shot Learning):
       ${examples}
       

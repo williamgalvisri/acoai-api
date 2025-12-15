@@ -28,10 +28,28 @@ const ClientPersonaSchema = new mongoose.Schema({
         idealResponse: String,
     }],
     businessContext: {
-        services: [String],
-        pricing: Object,
-        location: String,
-        hours: String,
+        services: [{
+            name: { type: String, required: true },
+            description: String,
+            duration: { type: Number }, // Optional override. If null, use defaultDuration
+            price: { type: Number }
+        }],
+        hours: {
+            monday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            tuesday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            wednesday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            thursday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            friday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            saturday: { open: String, close: String, isOpen: { type: Boolean, default: true } },
+            sunday: { open: String, close: String, isOpen: { type: Boolean, default: false } }
+        },
+        location: { type: String, default: '' },
+        contactPhone: { type: String }
+    },
+    appointmentSettings: {
+        defaultDuration: { type: Number, default: 30 }, // Default service time in minutes
+        bufferTime: { type: Number, default: 5 },       // Cleaning time between slots
+        timezone: { type: String, default: 'America/Bogota' }
     },
     reminderSettings: {
         isEnabled: { type: Boolean, default: true },
