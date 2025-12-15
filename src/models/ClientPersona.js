@@ -29,8 +29,13 @@ const ClientPersonaSchema = new mongoose.Schema({
     }],
     businessContext: {
         services: [String],
-        pricing: mongoose.Schema.Types.Mixed,
+        pricing: Object,
         location: String,
+        hours: String,
+    },
+    reminderSettings: {
+        isEnabled: { type: Boolean, default: true },
+        hoursBefore: { type: Number, default: 24 }
     },
     usage: {
         promptTokens: { type: Number, default: 0 },      // Monthly Input Sum

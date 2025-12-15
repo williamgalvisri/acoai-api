@@ -6,6 +6,15 @@ const AppointmentSchema = new mongoose.Schema({
         ref: 'Contact',
         required: true,
     },
+    ownerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ClientPersona',
+        // required: true,
+    },
+    reminderSent: {
+        type: Boolean,
+        default: false,
+    },
     // We keep customerPhone for redundancy/easy access if needed, or we could remove it.
     // Spec says ensure it has contactId, but not explicitly to remove phoneNumber.
     // I made customerPhone NOT required if we rely on contactId, assuming it's populating.

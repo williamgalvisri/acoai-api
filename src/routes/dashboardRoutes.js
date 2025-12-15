@@ -7,5 +7,7 @@ router.get('/appointments', dashboardController.getAppointments);
 router.put('/appointments/:id', dashboardController.updateAppointment);
 router.post('/contacts/:id/toggle-bot', dashboardController.toggleBot);
 router.get('/contacts/:id/messages', dashboardController.getMessages);
+router.get('/settings', dashboardController.getSettings);
+router.put('/settings', dashboardController.updateSettings);
 
 module.exports = router;

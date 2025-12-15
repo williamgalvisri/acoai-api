@@ -1,6 +1,9 @@
 const Contact = require('../models/Contact');
 const Appointment = require('../models/Appointment');
 const { NotFoundError } = require('../utils/ApiResponse');
+const ClientPersona = require('../models/ClientPersona');
+const ContactModel = require('../models/Contact');
+const ChatHistory = require('../models/ChatHistory');
 
 // GET /api/contacts
 exports.getContacts = async (req, res) => {
@@ -68,8 +71,6 @@ exports.toggleBot = async (req, res) => {
 exports.getMessages = async (req, res) => {
     try {
         const { id } = req.params;
-        const ContactModel = require('../models/Contact');
-        const ChatHistory = require('../models/ChatHistory');
 
         const contact = await ContactModel.findById(id);
         if (!contact) {
@@ -80,6 +81,40 @@ exports.getMessages = async (req, res) => {
             .sort({ timestamp: 1 }); // Oldest first
 
         return res.success(messages);
+    } catch (error) {
+        return res.error(error);
+    }
+};
+
+// GET /api/settings
+exports.getSettings = async (req, res) => {
+    try {
+        // Single tenant assumption: Get the first persona
+        const persona = await ClientPersona.findOne({});
+        if (!persona) {
+            return res.success({ reminderSettings: { isEnabled: true, hoursBefore: 24 } }); // Default if no persona
+        }
+        return res.success({ reminderSettings: persona.reminderSettings });
+    } catch (error) {
+        return res.error(error);
+    }
+};
+
+// PUT /api/settings
+exports.updateSettings = async (req, res) => {
+    try {
+        // req.body comes directly as { isEnabled: true, hoursBefore: 3 } from frontend
+        const { isEnabled, hoursBefore } = req.body;
+        const reminderSettings = { isEnabled, hoursBefore };
+
+        // Update the first persona found
+        const persona = await ClientPersona.findOneAndUpdate(
+            {},
+            { $set: { reminderSettings: reminderSettings } },
+            { new: true, upsert: true } // Create if doesn't exist (though it should)
+        );
+
+        return res.success({ reminderSettings: persona.reminderSettings });
     } catch (error) {
         return res.error(error);
     }

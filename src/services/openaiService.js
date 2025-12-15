@@ -252,9 +252,15 @@ async function bookAppointment(dateTime, customerPhone, notes) {
             throw new Error("Contact not found for booking");
         }
 
-        // In a real app, check availability here.
+        // User requested to use the Document ObjectId reference
+        //todo: pasar por parametro el ownerId
+        const persona = await ClientPersona.findOne({});
+        // We use persona._id if found
+        const ownerId = persona ? persona._id : null;
+
         const newAppointment = new Appointment({
             contactId: contact._id,
+            ownerId: ownerId, // Now an ObjectId ref
             customerPhone,
             dateTime: new Date(dateTime),
             notes,
