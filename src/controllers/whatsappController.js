@@ -4,17 +4,21 @@ const ChatHistory = require('../models/ChatHistory');
 const Contact = require('../models/Contact');
 const ClientPersona = require('../models/ClientPersona');
 const sseManager = require('../utils/sseManager');
-const { UnauthorizedError, InternalError } = require('../utils/ApiResponse');
+const { InternalError } = require('../utils/ApiResponse');
 const { default: mongoose } = require('mongoose');
 
 // Verify Webhook
-exports.verifyWebhook = (req, res) => {
+exports.verifyWebhook = async (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
     if (mode && token) {
-        const persona = ClientPersona.findOne({ _id: mongoose.Types.ObjectId(token) });
+        const persona = await ClientPersona.findOne({ _id: new mongoose.Types.ObjectId(token) });
+        if (!persona) {
+            return res.error(new InternalError('persona not found'));
+        }
+
         if (mode === 'subscribe' && token === persona._id.toString()) {
             console.log('WEBHOOK_VERIFIED');
             res.status(200).send(challenge);
@@ -50,7 +54,11 @@ exports.handleMessage = async (req, res) => {
                 // 1. Identify/Create Contact or Update
                 let contact = await Contact.findOne({ phoneNumber: from });
                 if (!contact) {
-                    contact = await Contact.create({ phoneNumber: from, lastInteraction: new Date() });
+                    contact = await Contact.create({
+                        phoneNumber: from,
+                        ownerId: persona._id,
+                        lastInteraction: new Date()
+                    });
                 } else {
                     // Update existing contact's last interaction
                     contact = await Contact.findByIdAndUpdate(

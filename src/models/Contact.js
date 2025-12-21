@@ -11,6 +11,11 @@ const ContactSchema = new mongoose.Schema({
         type: String,
         default: 'Cliente',
     },
+    ownerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ClientPersona',
+        required: true
+    },
     notes: {
         type: String,
         default: '',
@@ -22,6 +27,11 @@ const ContactSchema = new mongoose.Schema({
     isBotActive: {
         type: Boolean,
         default: true,
+    },
+    currentAppointment: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Appointment',
+        default: null,
     },
     createdAt: {
         type: Date,

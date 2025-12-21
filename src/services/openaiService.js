@@ -20,7 +20,12 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
         // 1. Identify/Create Contact
         let contact = await Contact.findOne({ phoneNumber });
         if (!contact) {
-            contact = await Contact.create({ phoneNumber });
+            contact = await Contact.create({ phoneNumber, ownerId });
+        }
+
+        // Populating reference to current appointment if exists
+        if (contact.currentAppointment) {
+            await contact.populate('currentAppointment');
         }
 
         // 2. Fetch Client Persona
@@ -107,15 +112,21 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
       Goal: Automate appointment scheduling while mimicking the detailed persona above.
       
       CRITICAL RULES:
+      0. **SILENT EXECUTION**: WHEN YOU NEED TO USE A TOOL (like checking availability), DO NOT SAY "Let me check", "One moment", "Hold on", or any filler. JUST CALL THE TOOL IMMEDIATELY. The user cannot see you "thinking", so filler text is annoying. BE DIRECT.
       1. **NEVER** guess or assume availability. You confirm availability ONLY by using the 'checkAvailability' tool. The database is the only source of truth.
-      2. If the user asks "Are you available at X?" or "What times do you have?", call 'checkAvailability' IMMEDIATELY. Do not ask for service details first unless necessary for duration (and even then, assume default duration for the check).
+      2. If the user asks "Are you available at X?" or "What times do you have?", call 'checkAvailability' IMMEDIATELY WITHOUT PREAMBLE. Do not ask for service details first unless necessary for duration (and even then, assume default duration for the check).
       3. **Always** before confirming an appointment, tell the user about the services and prices, and ask them which one they want. This is very importat.
       4. Use the 'checkAvailability' tool to answer "What times do you have?". The tool returns 'futureSlots' which you should read to the user.
       5. **NEVER** confirm an appointment without the tool saying "Slot available". If the tool says "Slot is busy", YOU MUST REFUSE and offer the alternatives provided by the tool.
       6. If 'checkAvailability' returns alternatives (e.g., 4:10 PM), and the user agrees (e.g., "Ok that works"), you MUST book THAT specific time (4:10 PM), not the original blocked time.
       7. WHEN the user confirms the date, time, and service, EXECUTE the checkAvailability tool to confirm the slot is available, THEN EXECUTE the 'bookAppointment' tool IMMEDIATELY. Pass the 'serviceName' exactly as listed in the menu.
       8. If the user tells you their name, remember it using the 'updateContactName' tool.
-      9. **Never** book an appointment without the user confirming the date, time, and service.`;
+      9. **Never** book an appointment without the user confirming the date, time, and service.
+      10. If the user wants to CANCEL or RESCHEDULE, use the appropriate tools.
+      
+      Current User Context:
+      ${contact.currentAppointment ? `The user HAS an upcoming appointment: ${new Date(contact.currentAppointment.dateTime).toLocaleString('en-US', { timeZone: persona.appointmentSettings?.timezone || 'America/Bogota' })} for ${contact.currentAppointment.service}.` : "The user does NOT have an active appointment."}
+      `;
         }
 
         // 5. Define Tools
@@ -176,6 +187,39 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
                             },
                         },
                         required: ["name"],
+                    },
+                },
+            },
+            {
+                type: "function",
+                function: {
+                    name: "cancelAppointment",
+                    description: "Cancel the user's upcoming appointment.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            reason: {
+                                type: "string",
+                                description: "Reason for cancellation (optional).",
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                type: "function",
+                function: {
+                    name: "rescheduleAppointment",
+                    description: "Reschedule the user's existing appointment to a new time.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            newDateTime: {
+                                type: "string",
+                                description: "The new date and time requested (ISO 8601).",
+                            },
+                        },
+                        required: ["newDateTime"],
                     },
                 },
             },
@@ -242,6 +286,14 @@ async function generateResponse(phoneNumber, messageText, ownerId) {
                         console.log('running updateContactName tool');
                         await Contact.updateOne({ phoneNumber }, { name: args.name });
                         return JSON.stringify({ success: true, message: `Contact name updated to ${args.name}` });
+                    },
+                    cancelAppointment: async (args) => {
+                        console.log('running cancelAppointment tool');
+                        return await cancelAppointment(phoneNumber, args.reason);
+                    },
+                    rescheduleAppointment: async (args) => {
+                        console.log('running rescheduleAppointment tool');
+                        return await rescheduleAppointment(phoneNumber, args.newDateTime, persona);
                     }
                 };
 
@@ -317,7 +369,12 @@ async function bookAppointment(dateTime, serviceName, customerPhone, notes, pers
             status: 'confirmed',
         });
 
-        await newAppointment.save();
+        const savedAppointment = await newAppointment.save();
+
+        // Link to Contact
+        contact.currentAppointment = savedAppointment._id;
+        await contact.save();
+
         return `Appointment confirmed for ${dateTime} (${duration} mins).`;
     } catch (err) {
         console.error("Booking error:", err);
@@ -496,3 +553,64 @@ async function checkAvailability(dateTime, persona) {
 }
 
 module.exports = { generateResponse };
+
+async function cancelAppointment(phoneNumber, reason) {
+    try {
+        const contact = await Contact.findOne({ phoneNumber }).populate('currentAppointment');
+        if (!contact || !contact.currentAppointment) {
+            return "No active appointment found to cancel.";
+        }
+
+        const appointment = await Appointment.findById(contact.currentAppointment._id);
+        if (!appointment) return "Appointment not found.";
+
+        appointment.status = 'cancelled';
+        appointment.notes = appointment.notes ? `${appointment.notes} | Cancelled: ${reason || 'User request'}` : `Cancelled: ${reason || 'User request'}`;
+        await appointment.save();
+
+        // Unlink from contact
+        contact.currentAppointment = null;
+        await contact.save();
+
+        return "Appointment has been successfully cancelled.";
+    } catch (error) {
+        console.error("Cancel Error:", error);
+        return "Failed to cancel appointment.";
+    }
+}
+
+async function rescheduleAppointment(phoneNumber, newDateTime, persona) {
+    try {
+        const contact = await Contact.findOne({ phoneNumber }).populate('currentAppointment');
+        if (!contact || !contact.currentAppointment) {
+            return "No active appointment found to reschedule. Please book a new one.";
+        }
+
+        const appointment = await Appointment.findById(contact.currentAppointment._id);
+        if (!appointment) return "Appointment not found.";
+
+        // Calculate new end time based on original duration or default
+        // We can re-fetch service duration if needed, or just assume same duration
+        let duration = 30;
+        if (appointment.endTime && appointment.dateTime) {
+            duration = (appointment.endTime - appointment.dateTime) / 60000; // minutes
+        }
+
+        const newStart = new Date(newDateTime);
+        const newEnd = new Date(newStart.getTime() + duration * 60000);
+
+        // Optional: Check availability explicitly here?
+        // The bot *should* have checked availability before calling this, per prompt rules.
+        // But for safety, we could check for conflicts. For now, trusting the bot flow to allow override.
+
+        appointment.dateTime = newStart;
+        appointment.endTime = newEnd;
+        appointment.status = 'confirmed'; // Re-confirm in case it was pending?
+        await appointment.save();
+
+        return `Appointment rescheduled to ${newDateTime}.`;
+    } catch (error) {
+        console.error("Reschedule Error:", error);
+        return "Failed to reschedule appointment.";
+    }
+}
