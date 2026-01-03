@@ -90,7 +90,8 @@ const salesAgent = {
                                 type: "array",
                                 items: { type: "string", description: "List of product names or IDs" }
                             },
-                            deliveryAddress: { type: "string" }
+                            deliveryAddress: { type: "string" },
+                            paymentMethod: { type: "string", enum: ["transfer", "cash"], description: "Optional. Set if user already specified payment method." }
                         },
                         required: ["items", "deliveryAddress"]
                     }
@@ -100,7 +101,7 @@ const salesAgent = {
                 type: "function",
                 function: {
                     name: "updateOrderPaymentMethod",
-                    description: "Update the payment method for the latest pending order.",
+                    description: "Update the payment method if not set during creation.",
                     parameters: {
                         type: "object",
                         properties: {
@@ -191,7 +192,11 @@ const salesAgent = {
                     
                     const product = await Product.findOne({
                         ownerId: persona._id,
-                        $or: [{ retailerId: identifier }, { name: regex }]
+                        $or: [
+                            { retailerId: identifier },
+                            { retailerId: { $regex: regex } }, // Added partial match for retailerId
+                            { name: regex }
+                        ]
                     });
 
                     if (product) {
@@ -230,7 +235,7 @@ const salesAgent = {
                     totalAmount: totalAmount,
                     currency: 'COP',
                     deliveryAddress: args.deliveryAddress || 'not_specified',
-                    paymentMethod: 'not_specified',
+                    paymentMethod: args.paymentMethod || 'not_specified',
                     status: 'pending'
                 });
 
