@@ -142,14 +142,14 @@ exports.processIncomingMessage = async (messageObject, phoneNumberId, replyCallb
             });
 
             // Update Aggregate Usage
-            if (persona) {
+            if (persona && usage) {
                 await ClientPersona.updateOne(
                     { _id: persona._id },
                     {
                         $inc: {
-                            'usage.promptTokens': usage.prompt_tokens,
-                            'usage.completionTokens': usage.completion_tokens,
-                            'usage.totalTokens': usage.total_tokens
+                            'usage.promptTokens': usage.prompt_tokens || 0,
+                            'usage.completionTokens': usage.completion_tokens || 0,
+                            'usage.totalTokens': usage.total_tokens || 0
                         }
                     }
                 );
