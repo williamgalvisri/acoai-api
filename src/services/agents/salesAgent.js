@@ -27,7 +27,10 @@ const salesAgent = {
             - Do NOT list products manually unless specifically asked about a single item's price/details.
             
             ### 2. ORDER FLOW
+            ### 2. ORDER FLOW
             1. **Create Order**: When the user decides what to buy, use 'createOrder'.
+               - **items**: MUST be real products from the catalog.
+               - **CRITICAL**: Do NOT put the delivery address inside the 'items' list. The address goes in 'deliveryAddress'.
                - **IMPORTANT**: The user can ONLY have ONE active order at a time. If 'createOrder' fails saying an order exists, tell the user they must complete or cancel the current one.
             2. **Delivery Address**: If not provided, ask for it.
             3. **Payment Method (MANDATORY)**:
@@ -183,6 +186,7 @@ const salesAgent = {
                 console.log('--- DEBUG: createOrder CALLED ---');
                 console.log('Args:', JSON.stringify(args, null, 2));
                 const orderItems = [];
+                const missingItems = [];
                 let totalAmount = 0;
 
                 for (const item of args.items) {
@@ -212,20 +216,17 @@ const salesAgent = {
                         });
                         totalAmount += (product.price * qty);
                     } else {
-                        console.log(`NOT FOUND product for: "${identifier}". Defaulting to $0.`);
-                        const qty = (typeof item === 'object' && item.quantity) ? item.quantity : 1;
-                        orderItems.push({
-                            productId: 'UNKNOWN',
-                            name: identifier,
-                            quantity: qty,
-                            price: 0,
-                            currency: 'COP'
-                        });
+                        console.log(`NOT FOUND product for: "${identifier}".`);
+                        missingItems.push(identifier);
                     }
                 }
 
-                if (orderItems.length === 0 && args.items.length > 0) {
-                    return "Could not identify any valid products to order. Please refine your search.";
+                if (missingItems.length > 0) {
+                    return `Error: Could not find the following products in the catalog: ${missingItems.join(', ')}. Please verify the product names.`;
+                }
+
+                if (orderItems.length === 0) {
+                    return "No valid products provided to create an order.";
                 }
 
                 const newOrder = await Order.create({
