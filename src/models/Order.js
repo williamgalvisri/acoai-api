@@ -26,18 +26,18 @@ const orderSchema = new mongoose.Schema({
         type: String,
         default: 'COP'
     },
-    status: {
-        type: String,
-        enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
-        default: 'pending'
-    },
-    deliveryAddress: {
-        type: String,
-        required: false
-    },
     paymentMethod: {
         type: String,
-        required: false
+        enum: ['transfer', 'cash', 'not_specified'],
+        default: 'not_specified'
+    },
+    paymentProofUrl: {
+        type: String
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'pending_verification', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+        default: 'pending'
     },
     createdAt: {
         type: Date,
