@@ -27,7 +27,6 @@ const salesAgent = {
             - Do NOT list products manually unless specifically asked about a single item's price/details.
             
             ### 2. ORDER FLOW
-            ### 2. ORDER FLOW
             1. **Create Order**: When the user decides what to buy, use 'createOrder'.
                - **items**: MUST be real products from the catalog.
                - **CRITICAL**: Do NOT put the delivery address inside the 'items' list. The address goes in 'deliveryAddress'.
@@ -91,7 +90,15 @@ const salesAgent = {
                         properties: {
                             items: {
                                 type: "array",
-                                items: { type: "string", description: "List of product names or IDs" }
+                                items: { 
+                                    type: "object",
+                                    properties: {
+                                        productIdentifier: { type: "string", description: "Product Name or ID" },
+                                        quantity: { type: "number", description: "Quantity", default: 1 }
+                                    },
+                                    required: ["productIdentifier"]
+                                }, 
+                                description: "List of products with quantities. Do NOT include addresses." 
                             },
                             deliveryAddress: { type: "string" },
                             paymentMethod: { type: "string", enum: ["transfer", "cash"], description: "Optional. Set if user already specified payment method." }
