@@ -259,6 +259,30 @@ const salesAgent = {
                  });
 
                  return "Payment proof registered. Admin will verify.";
+            },
+            cancelOrder: async (args) => {
+                const order = await Order.findOne({ 
+                    contactId: contact._id, 
+                    status: { $in: ['pending', 'pending_verification'] } 
+                }).sort({ createdAt: -1 });
+
+                if (!order) return "No pending order found to cancel.";
+
+                order.status = 'cancelled';
+                await order.save();
+
+                sseManager.sendEvent(persona._id.toString(), 'ORDER_CANCELLED', order);
+                return `Order #${order._id} has been cancelled successfully.`;
+            },
+            getOrderStatus: async (args) => {
+                 const order = await Order.findOne({ 
+                    contactId: contact._id, 
+                    status: { $nin: ['cancelled', 'completed'] } 
+                }).sort({ createdAt: -1 });
+                
+                if (!order) return "You have no active orders at the moment.";
+                
+                return `Your Order #${order._id} is currently: ${order.status.toUpperCase()}. Total: $${order.totalAmount}. ${(order.status === 'confirmed') ? 'We are preparing it!' : ''}`;
             }
         };
     }
