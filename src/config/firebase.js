@@ -1,3 +1,5 @@
+const admin = require('firebase-admin');
+
 // Initialize Firebase
 if (!admin.apps.length) {
   let serviceAccount;

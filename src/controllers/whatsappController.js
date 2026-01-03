@@ -6,6 +6,53 @@ const ClientPersona = require('../models/ClientPersona');
 const sseManager = require('../utils/sseManager');
 const { InternalError } = require('../utils/ApiResponse');
 const { default: mongoose } = require('mongoose');
+const bucket = require('../config/firebase');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+
+// Helper: Download Media from WhatsApp
+async function downloadWhatsAppMedia(mediaId, token) {
+    try {
+        // 1. Get Media URL
+        const urlRes = await axios.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const mediaUrl = urlRes.data.url;
+        const mimeType = urlRes.data.mime_type;
+
+        // 2. Download Binary
+        const binaryRes = await axios.get(mediaUrl, {
+            responseType: 'arraybuffer',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        return { buffer: binaryRes.data, mimeType };
+    } catch (error) {
+        console.error('Error downloading media:', error.message);
+        return null;
+    }
+}
+
+// Helper: Upload to Firebase
+async function uploadToFirebase(buffer, mimeType, folder = 'whatsapp_media') {
+    try {
+        const ext = mimeType.split('/')[1] || 'bin';
+        const filename = `${folder}/${uuidv4()}.${ext}`;
+        const file = bucket.file(filename);
+
+        await file.save(buffer, {
+            metadata: { contentType: mimeType }
+        });
+
+        await file.makePublic();
+        return `https://storage.googleapis.com/${bucket.name}/${filename}`;
+    } catch (error) {
+        console.error('Error uploading to Firebase:', error.message);
+        return null;
+    }
+}
 
 // Verify Webhook
 exports.verifyWebhook = async (req, res) => {
@@ -87,11 +134,22 @@ exports.processIncomingMessage = async (messageObject, phoneNumberId, replyCallb
 
     // HANDLE TEXT & IMAGE MESSAGES
     if (messageObject.type === 'image') {
-        const imageCaption = messageObject.image?.caption;
-        msgBody = imageCaption ? `[IMAGE] ${imageCaption}` : "[IMAGE] User sent an image.";
-        console.log('IMAGE RECEIVED from', from);
-        // Note: In a real implementation, you would download the image using the ID: messageObject.image.id
-        // For now, we just notify the agent that an image was sent.
+        const imageId = messageObject.image?.id;
+        const imageCaption = messageObject.image?.caption || "";
+        let publicUrl = "[IMAGE_UPLOAD_FAILED]";
+
+        console.log('IMAGE RECEIVED from', from, 'ID:', imageId);
+
+        if (imageId && persona.whatsappBussinesConfig?.token) {
+             const mediaData = await downloadWhatsAppMedia(imageId, persona.whatsappBussinesConfig.token);
+             if (mediaData) {
+                 publicUrl = await uploadToFirebase(mediaData.buffer, mediaData.mimeType);
+                 console.log('Image uploaded to:', publicUrl);
+             }
+        }
+
+        msgBody = `[IMAGE] ${publicUrl} ${imageCaption}`;
+        
     } else if (messageObject.type !== 'text') {
         // Still block other types for now (audio, sticker, etc) unless requested otherwise
         console.log(`Blocking unsupported media: ${messageObject.type}`);
@@ -135,9 +193,9 @@ exports.processIncomingMessage = async (messageObject, phoneNumberId, replyCallb
                 role: 'assistant',
                 content: aiResponseText, // Use the text part
                 tokens: {
-                    prompt: usage.prompt_tokens,
-                    completion: usage.completion_tokens,
-                    total: usage.total_tokens
+                    prompt: usage?.prompt_tokens || 0,
+                    completion: usage?.completion_tokens || 0,
+                    total: usage?.total_tokens || 0
                 }
             });
 
